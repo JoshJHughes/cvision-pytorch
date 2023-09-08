@@ -21,18 +21,18 @@ import datetime
 import os
 import time
 
-import presets
+from references.detection import presets
 import torch
 import torch.utils.data
 import torchvision
 import torchvision.models.detection
 import torchvision.models.detection.mask_rcnn
-import utils
-from coco_utils import get_coco
-from engine import evaluate, train_one_epoch
-from group_by_aspect_ratio import create_aspect_ratio_groups, GroupedBatchSampler
+from references.detection import utils
+from references.detection.coco_utils import get_coco
+from references.detection.engine import evaluate, train_one_epoch
+from references.detection.group_by_aspect_ratio import create_aspect_ratio_groups, GroupedBatchSampler
 from torchvision.transforms import InterpolationMode
-from transforms import SimpleCopyPaste
+from references.detection.transforms import SimpleCopyPaste
 
 
 def copypaste_collate_fn(batch):
