@@ -1,9 +1,7 @@
 import os
+import numpy as np
 import torch
-
-from torchvision.io import read_image
-from torchvision.ops.boxes import masks_to_boxes
-from torchvision import datapoints as dp
+from PIL import Image
 
 class PennFudanDataset(torch.utils.data.Dataset):
     def __init__(self, root, transforms):
@@ -21,38 +19,47 @@ class PennFudanDataset(torch.utils.data.Dataset):
         # load images and masks
         img_path = os.path.join(self.root, self.imgsubfolder, self.imgs[idx])
         mask_path = os.path.join(self.root, self.masksubfolder, self.masks[idx])
-        img = read_image(img_path)
-        mask = read_image(mask_path)
-        # instances are encoded as different colours, return tensor of unique 
-        # colours
-        obj_ids = torch.unique(mask)
+        img = Image.open(img_path).convert("RGB")
+        # don't convert mask to RGB as each colour corresponds to different
+        # instance, w. 0 = background
+        mask = Image.open(mask_path)
+        # convert PIL Image to numpy array
+        mask = np.array(mask)
+        # instances encoded as different colours
+        obj_ids = np.unique(mask)
         # first colour is background, remove
         obj_ids = obj_ids[1:]
-        num_objs = len(obj_ids)
 
         # unsqueeze obj_ids to tensor dim (2,1,1), broadcast over colour-coded 
         # mask to generate set of binary masks 
-        masks = (mask == obj_ids[:, None, None]).to(dtype=torch.uint8)
+        masks = (mask == obj_ids[:, None, None])
         
         # get bounding box co-ords for each mask
-        boxes = masks_to_boxes(masks)
+        num_objs = len(obj_ids)
+        boxes = []
+        for i in range(num_objs):
+            pos = np.nonzero(masks[i])
+            xmin = np.min(pos[1])
+            xmax = np.max(pos[1])
+            ymin = np.min(pos[0])
+            ymax = np.max(pos[0])
+            boxes.append([xmin, ymin, xmax, ymax])
 
+        # convert everything into a torch.Tensor
+        boxes = torch.as_tensor(boxes, dtype=torch.float32)
         # only one class (PASpersonWalking)
         labels = torch.ones((num_objs,), dtype=torch.int64)
+        masks = torch.as_tensor(masks, dtype=torch.uint8)
 
-        image_id = idx
+        image_id = torch.tensor([idx])
         # (y2 - y1) * (x2 - x1)
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
-        # suppose all instances are not crowds
+        # suppose all instances are not crowd
         iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
 
-        # wrap sample and targets into torchvision datapoints
-        img = dp.Image(img)
-
         target = {}
-        target["boxes"] = dp.BoundingBox(boxes, format="XYXY", 
-                                           spatial_size=img.shape[-2:])
-        target["masks"] = dp.Mask(masks)
+        target["boxes"] = boxes
+        target["masks"] = masks
         target["labels"] = labels
         target["image_id"] = image_id
         target["area"] = area
