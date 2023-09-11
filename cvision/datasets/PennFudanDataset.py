@@ -51,7 +51,8 @@ class PennFudanDataset(torch.utils.data.Dataset):
         labels = torch.ones((num_objs,), dtype=torch.int64)
         masks = torch.as_tensor(masks, dtype=torch.uint8)
 
-        image_id = torch.tensor([idx])
+        # image_id = torch.tensor([idx])
+        image_id = idx
         # (y2 - y1) * (x2 - x1)
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
         # suppose all instances are not crowd
