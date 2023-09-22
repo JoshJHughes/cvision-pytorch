@@ -111,7 +111,6 @@ def main():
 
     # get model & move to gpu
     model = Lenet_Custom(n_classes)
-    # model = Net()
     model.to(device)
 
     # construct an optimizer
