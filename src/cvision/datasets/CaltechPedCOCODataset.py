@@ -48,33 +48,42 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
         
         # parent class produces labels as list of dicts for each object in image
         # transforms.v2 expects a dict of lists
-        # this method assumes no missing data
-        targetsv2 = {k: [target[k] for target in targets] for k in targets[0]}
-
-        # add "boxes" and "labels" to store bbox and category_id in datapoints
-        # required for compatibility with transforms.v2
-        # note that "bbox" will not be transformed
-        bboxes = torch.tensor(targetsv2['bbox'])
+        targetsv2 = {}
+        # if there are annotations in image
+        if len(targets) != 0:
+            targetsv2['area'] = [tgt['area'] for tgt in targets]
+            targetsv2['iscrowd'] = [int(tgt['iscrowd']) for tgt in targets]
+            targetsv2['bbox'] = [tgt['bbox'] for tgt in targets]
+            targetsv2['category_id'] = [tgt['category_id'] for tgt in targets]
+            targetsv2['id'] = [tgt['id'] for tgt in targets]
+            # convert bounding boxes & category_ids to transforms.v2 format
+            boxes = torchvision.ops.box_convert(
+                torch.tensor(targetsv2['bbox']), 'xywh', 'xyxy')
+            labels = torch.tensor(targetsv2['category_id'])
+            
+        else:
+            boxes = torch.zeros((0,4), dtype=torch.int64)
+            labels = torch.ones((0,), dtype=torch.int64)
+        
+        targetsv2['image_id'] = id
+        targetsv2['labels'] = labels
         targetsv2['boxes'] = dp.BoundingBox(
-                torchvision.ops.box_convert(bboxes, 'xywh', 'xyxy'),
+                boxes,
                 format = torchvision.datapoints.BoundingBoxFormat.XYXY,
                 spatial_size=image.shape[-2:]
             )
-        targetsv2['labels'] = torch.tensor(targetsv2['category_id'])
-
+        
         if self.transforms is not None:
             image, targetsv2 = self.transforms(image, targetsv2)
 
         return image, targetsv2
 
-def test():
+def testplot(idx):
     import matplotlib.pyplot as plt
     from torchvision.transforms import v2
     from torchvision.utils import draw_bounding_boxes
 
     torchvision.disable_beta_transforms_warning()
-
-    idx = 50
 
     # create untransformed dataset
     dataset = CaltechPedCOCODataset(
@@ -103,7 +112,7 @@ def test():
     )
     trans_image, trans_targets = dataset2[idx]
 
-    ann_orig_image = draw_bounding_boxes(orig_image, orig_targets['boxes'],
+    ann_orig_image = draw_bounding_boxes(orig_image, orig_targets['boxes'], 
                                          colors='red', width=2)
     ann_trans_image = draw_bounding_boxes(trans_image, trans_targets['boxes'],
                                           colors='red', width=2)
@@ -113,5 +122,73 @@ def test():
     axs[1].imshow(ann_trans_image.permute(1,2,0))
     fig.show()
 
+def testloader():
+    from torchvision.transforms import v2
+    from torch.utils.data import DataLoader
+
+    torchvision.disable_beta_transforms_warning()
+
+    # data source
+    TRAIN_ROOT = 'data/Caltech_COCO/train_images/'
+    TRAIN_ANNFILE = 'data/Caltech_COCO/annotations/train.json'
+    TEST_ROOT = 'data/Caltech_COCO/test_images/'
+    TEST_ANNFILE = 'data/Caltech_COCO/annotations/test.json'
+
+    train_transforms = v2.Compose([
+        v2.RandomHorizontalFlip(p=0.5),
+        v2.SanitizeBoundingBox()
+    ])
+    test_transforms = v2.Compose([
+        v2.SanitizeBoundingBox()
+    ])
+
+    train_dataset = CaltechPedCOCODataset(
+        root = TRAIN_ROOT,
+        annFile = TRAIN_ANNFILE,
+        transforms = train_transforms
+    )
+    test_dataset = CaltechPedCOCODataset(
+        root = TEST_ROOT,
+        annFile = TEST_ANNFILE,
+        transforms = test_transforms
+    )
+
+    no_annot_idx = 10
+    batch_size = 1
+    shuffle = False
+    num_workers = 1
+
+    for i in range(20):
+        image, target = test_dataset[i]
+        pass
+
+def testCOCO():
+    from torchvision.datasets import CocoDetection
+    from torchvision.datasets import wrap_dataset_for_transforms_v2
+    import matplotlib.pyplot as plt
+    
+    dataset = CocoDetection(
+        root = 'data/COCO2017/val2017',
+        annFile = 'data/COCO2017/annotations/instances_val2017.json'
+    )
+    dataset = wrap_dataset_for_transforms_v2(dataset)
+
+    image, target = dataset[0]
+
+    # obtain target format for image with no annotations
+    # target: {'image_id': 25593}
+    for image, target in iter(dataset):
+        if target['image_id'] == 25593:
+            fig, axs = plt.subplots(1,1)
+            axs.imshow(image)
+            fig.show()
+            pass
+    pass
+
+
 if __name__ == '__main__':
-    test()
+    # testplot(50) # with annots
+    testplot(10) # no annots
+    # testloader()
+    # testCOCO()
+    pass
