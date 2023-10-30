@@ -17,9 +17,9 @@ classifiers = [
     "Environment :: GPU :: NVIDIA CUDA :: 11.8"
 ]
 dependencies = [
-  "torch >= 2.0.1",
-  "torchvision >= 0.15.2",
-  "matplotlib >= 3.7",
+  "torch >= 2.1.0",
+  "torchvision >= 0.16.0",
+  "matplotlib >= 3.7.2",
   "pycocotools >= 2.0.7",
 ]
 

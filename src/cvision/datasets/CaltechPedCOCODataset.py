@@ -1,6 +1,6 @@
 import torch
 import torchvision
-from torchvision import datapoints as dp
+from torchvision import tv_tensors as tvt
 from typing import Optional, Callable, Tuple, Any
 
 class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
@@ -27,6 +27,16 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
     note:
         :attr:`transforms` and the combination of :attr:`transform` and
             :attr:`target_transform` are mutually exclusive.
+    
+    sample format:
+        image: Image of shape [3,H,W] or PIL Image of size (H,W)
+        target: Dict containing:
+        boxes: BoundingBox of shape [N,4] in XYXY format
+        labels: integer Tensor of shape [N], 0 is always background class
+        image_id: int, unique
+        area: float Tensor, shape [N], area of each bbox, used in COCO metric
+        iscrowd: uint8 Tensor of shape [N], iscrowd=True ignored during eval
+        masks (optional: Mask of shape [N,H,W]), segmentation masks for each obj
     """
     def __init__(
             self,
@@ -44,22 +54,29 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
         targets = self._load_target(id)
 
         # convert image to datapoints image
-        image = dp.Image(image)
+        image = tvt.Image(image)
         
         # parent class produces labels as list of dicts for each object in image
         # transforms.v2 expects a dict of lists
         targetsv2 = {}
         # if there are annotations in image
         if len(targets) != 0:
-            targetsv2['area'] = [tgt['area'] for tgt in targets]
-            targetsv2['iscrowd'] = [int(tgt['iscrowd']) for tgt in targets]
-            targetsv2['bbox'] = [tgt['bbox'] for tgt in targets]
-            targetsv2['category_id'] = [tgt['category_id'] for tgt in targets]
-            targetsv2['id'] = [tgt['id'] for tgt in targets]
+            targetsv2 = {key: [tgt[key] for tgt in targets] for key in targets[0]}
+            # type conversions
+            targetsv2['area'] = torch.tensor(targetsv2['area'], 
+                                             dtype=torch.float)
+            targetsv2['iscrowd'] = torch.tensor(targetsv2['iscrowd'], 
+                                                dtype=torch.uint8)
             # convert bounding boxes & category_ids to transforms.v2 format
             boxes = torchvision.ops.box_convert(
                 torch.tensor(targetsv2['bbox']), 'xywh', 'xyxy')
             labels = torch.tensor(targetsv2['category_id'])
+            targetsv2['labels'] = labels
+            targetsv2['boxes'] = tvt.BoundingBoxes(
+                    boxes,
+                    format = tvt.BoundingBoxFormat.XYXY,
+                    canvas_size=image.shape[-2:]
+                )
             
         else:
             boxes = torch.zeros((0,4), dtype=torch.int64)
@@ -67,16 +84,43 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
         
         targetsv2['image_id'] = id
         targetsv2['labels'] = labels
-        targetsv2['boxes'] = dp.BoundingBox(
+        targetsv2['boxes'] = tvt.BoundingBoxes(
                 boxes,
-                format = torchvision.datapoints.BoundingBoxFormat.XYXY,
-                spatial_size=image.shape[-2:]
+                format = tvt.BoundingBoxFormat.XYXY,
+                canvas_size=image.shape[-2:]
             )
         
         if self.transforms is not None:
             image, targetsv2 = self.transforms(image, targetsv2)
 
         return image, targetsv2
+    
+def print_sample_summary(image, target, verbose=False):
+    """ check __getitem__ is returning correctly
+    image: Image of shape [3,H,W] or PIL Image of size (H,W)
+    target: Dict containing:
+    boxes: BoundingBox of shape [N,4] in XYXY format
+    labels: integer Tensor of shape [N], 0 is always background class
+    image_id: int, unique
+    area: float Tensor, shape [N], area of each bbox, used in COCO metric
+    iscrowd: uint8 Tensor of shape [N], iscrowd=True ignored during eval
+    masks (optional: Mask of shape [N,H,W]), segmentation masks for each obj
+    """
+    w1, w2, w3 = 13, 24, 22
+    print(f"{'attribute':<{w1}}{'type':<{w2}}{'shape':<{w3}}{'value'}")
+    print(f"{'image':<{w1}}{str(type(image)):<{w2}}", end="")
+    print(f"{str(image.shape):<{w3}}")
+    for key in target:
+        print(f"{key:<{w1}}", end="")
+        print(f"{str(type(target[key])):<{w2}}", end="")
+        if hasattr(target[key], 'shape'):
+            print(f"{str(target[key].shape):<{w3}}", end="")
+        else:
+            print(f"{'':<{w3}}", end="")
+        if verbose:
+            print(f"{target[key]}", end="")
+        print("")
+
 
 def testplot(idx):
     import matplotlib.pyplot as plt
@@ -100,7 +144,7 @@ def testplot(idx):
         v2.RandomResizedCrop(size=(224, 224), antialias=True),
         v2.RandomPhotometricDistort(p=1),
         v2.RandomHorizontalFlip(p=1),
-        v2.SanitizeBoundingBox()
+        v2.SanitizeBoundingBoxes()
     ])
 
     dataset2 = CaltechPedCOCODataset(
@@ -121,46 +165,6 @@ def testplot(idx):
     axs[0].imshow(ann_orig_image.permute(1,2,0))
     axs[1].imshow(ann_trans_image.permute(1,2,0))
     fig.show()
-
-def testloader():
-    from torchvision.transforms import v2
-    from torch.utils.data import DataLoader
-
-    torchvision.disable_beta_transforms_warning()
-
-    # data source
-    TRAIN_ROOT = 'data/Caltech_COCO/train_images/'
-    TRAIN_ANNFILE = 'data/Caltech_COCO/annotations/train.json'
-    TEST_ROOT = 'data/Caltech_COCO/test_images/'
-    TEST_ANNFILE = 'data/Caltech_COCO/annotations/test.json'
-
-    train_transforms = v2.Compose([
-        v2.RandomHorizontalFlip(p=0.5),
-        v2.SanitizeBoundingBox()
-    ])
-    test_transforms = v2.Compose([
-        v2.SanitizeBoundingBox()
-    ])
-
-    train_dataset = CaltechPedCOCODataset(
-        root = TRAIN_ROOT,
-        annFile = TRAIN_ANNFILE,
-        transforms = train_transforms
-    )
-    test_dataset = CaltechPedCOCODataset(
-        root = TEST_ROOT,
-        annFile = TEST_ANNFILE,
-        transforms = test_transforms
-    )
-
-    no_annot_idx = 10
-    batch_size = 1
-    shuffle = False
-    num_workers = 1
-
-    for i in range(20):
-        image, target = test_dataset[i]
-        pass
 
 def testCOCO():
     from torchvision.datasets import CocoDetection
@@ -187,8 +191,7 @@ def testCOCO():
 
 
 if __name__ == '__main__':
-    # testplot(50) # with annots
-    testplot(10) # no annots
-    # testloader()
+    testplot(50) # with annots
+    # testplot(10) # no annots
     # testCOCO()
     pass
