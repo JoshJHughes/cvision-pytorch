@@ -114,7 +114,7 @@ def get_model(num_classes, box_Score_thresh=0.9):
                                        box_score_thresh=box_Score_thresh)
     return model, weights
 
-def train_model(dataloaders, dataset_sizes, device, model, preprocess, loss_fn, 
+def train_model(dataloaders, dataset_sizes, device, model, preprocess, 
                 optimizer, scheduler, num_epochs = 10):
     since = time.time()
 
@@ -124,6 +124,7 @@ def train_model(dataloaders, dataset_sizes, device, model, preprocess, loss_fn,
 
         torch.save(model.state_dict(), best_model_params_pth)
         best_acc = 0.0
+        best_loss = 0.0
 
         for epoch in range(num_epochs):
             print(f"Epoch {epoch}/{num_epochs-1}")
@@ -137,7 +138,7 @@ def train_model(dataloaders, dataset_sizes, device, model, preprocess, loss_fn,
                         model.eval()
                 
                 # change this
-                # running_loss = 0.0
+                running_loss = 0.0
                 # running_corrects = 0
 
                 # iterate over batches
@@ -151,42 +152,43 @@ def train_model(dataloaders, dataset_sizes, device, model, preprocess, loss_fn,
 
                     # forward, tracking gradients only if in training mode
                     with torch.set_grad_enabled(phase == 'train'):
-                        logits = model(images, targets)
-                        # output format (values, indices) - change for detection
-                        # _, preds = torch.max(logits, 1)
-                        # check format of logits and targets for pretrained net
-                        loss = loss_fn(logits, targets)
+                        loss_dict = model(images, targets)
+                        losses = sum(loss for loss in loss_dict.values())
 
                         # backpropagation only in training mode
                         if phase == 'train':
-                            loss.backward()
+                            losses.backward()
                             optimizer.step()
 
                     # calc eval stats - change these
-                    # running_loss += loss.item() * images.size(0)
+                    running_loss += losses
                     # running_corrects += torch.sum(preds == targets.data)
 
                 if phase == 'train':
                     scheduler.step()
 
                 # change this
-                # epoch_loss = running_loss / dataset_sizes[phase]
+                epoch_loss = running_loss / dataset_sizes[phase]
                 # epoch_acc = running_corrects.double() / dataset_sizes[phase]
-                epoch_loss = 0.0
                 epoch_acc = 0.0
 
                 print(f'{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}')
 
                 # if model has best test acc, save it
-                if phase == 'test' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
+                # if phase == 'test' and epoch_acc > best_acc:
+                #     best_acc = epoch_acc
+                #     torch.save(model.state_dict(), best_model_params_pth)
+                # if model has best test loss, save it
+                if phase == 'test' and epoch_loss < best_loss:
+                    best_loss = epoch_loss
                     torch.save(model.state_dict(), best_model_params_pth)
             
             print()
 
         time_elapsed = time.time() - since
         print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
-        print(f'Best val Acc: {best_acc:4f}')
+        # print(f'Best val Acc: {best_acc:4f}')
+        print(f'Best val loss: {best_loss:4f}')
 
         # once all epochs finished, return model with best weights
         model.load_state_dict(torch.load(best_model_params_pth))
@@ -220,8 +222,8 @@ def main():
         batch_size=2)
 
     # visualise first batch
-    images, targets = next(iter(dataloaders['train']))
-    plot_batch(images, targets)
+    # images, targets = next(iter(dataloaders['train']))
+    # plot_batch(images, targets)
 
     # get the model using our helper function
     model, weights = get_model(num_classes, box_score_thresh)
@@ -246,12 +248,14 @@ def main():
         gamma=gamma
     )
 
-    # cross-entropy loss
-    loss_fn = torch.nn.CrossEntropyLoss()
-
-    model = train_model(dataloaders, dataset_sizes, device, model, preprocess, loss_fn, optimizer, lr_scheduler, num_epochs)
+    model = train_model(dataloaders, dataset_sizes, device, model, preprocess, 
+                        optimizer, lr_scheduler, num_epochs)
 
     pass
 
 if __name__ == "__main__":
     main()
+
+# TODO
+# fix eval and loss
+# alter num_classes & final layers
