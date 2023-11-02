@@ -71,12 +71,6 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
             boxes = torchvision.ops.box_convert(
                 torch.tensor(targetsv2['bbox']), 'xywh', 'xyxy')
             labels = torch.tensor(targetsv2['category_id'])
-            targetsv2['labels'] = labels
-            targetsv2['boxes'] = tvt.BoundingBoxes(
-                    boxes,
-                    format = tvt.BoundingBoxFormat.XYXY,
-                    canvas_size=image.shape[-2:]
-                )
             
         else:
             boxes = torch.zeros((0,4), dtype=torch.int64)
@@ -87,7 +81,8 @@ class CaltechPedCOCODataset(torchvision.datasets.coco.CocoDetection):
         targetsv2['boxes'] = tvt.BoundingBoxes(
                 boxes,
                 format = tvt.BoundingBoxFormat.XYXY,
-                canvas_size=image.shape[-2:]
+                canvas_size=image.shape[-2:],
+                dtype = torch.float32
             )
         
         if self.transforms is not None:
